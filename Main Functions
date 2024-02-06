@@ -1,0 +1,269 @@
+#package installation
+!pip install pybaseball
+!pip install plottable
+
+#library importing
+import os
+import requests
+from bs4 import BeautifulSoup
+from urllib.request import urlopen
+import re
+import pandas as pd
+import numpy as np
+import matplotlib
+import matplotlib.pyplot as plt
+import seaborn as sns
+import plotly.graph_objects as go
+import plotly.express as px
+from pybaseball import batting_stats, statcast_batter, playerid_lookup, batting_stats_bref
+from plottable import ColumnDefinition, Table
+from plottable.cmap import normed_cmap
+from plottable.plots import image
+
+#-----defining functions-----#
+#radar charts
+def current_player_radar_(first_name, last_name):
+
+  #retrieving stats for all players
+  data = batting_stats(start_season = '2020', end_season = '2023', qual = 200)
+
+  #scaling selected stats to entire data set to use in figure
+  data['WAR Score'] = data['WAR'].rank(pct=True)
+  data['Batting AVG Score'] = data['AVG'].rank(pct=True)
+  data['OBP+ Score'] = data['OBP+'].rank(pct=True)
+  data['wRC+ Score'] = data['wRC+'].rank(pct=True)
+  data['Speed Score'] = data['Spd'].rank(pct=True)
+  data['wRAA Score'] = data['wRAA'].rank(pct=True)
+  data['UBR Score'] = data['UBR'].rank(pct=True)
+
+  #extracting player name from player lookup and capitalizing first and last name using .title to use in filtering of all player data
+  player_id_ = (f"{first_name} {last_name}").title()
+
+  #creating new dataframe from selected player data
+  player_data_ = data[(data['Name'] == player_id_)]
+
+  #re-index the dataframe
+  player_data_new_ = player_data_.reset_index(drop=True)
+  player_data_new_
+
+  #selecting labels for player radar chart
+  labels=np.array(['WAR Score', 'OBP+ Score', 'wRC+ Score', 'UBR Score', 'Speed Score', 'Batting AVG Score', 'wRAA Score'])
+  stats=player_data_new_.loc[0,labels].values
+
+  #plotting the radar chart
+  fig_ = px.line_polar(player_data_new_,
+                      r=stats,
+                      theta=labels,
+                      line_close=True,
+                      line_shape='spline',
+                      markers=True,
+                      start_angle=30,
+                      width= 565,
+                      height= 565,
+                      #template="plotly_dark",
+                      color_discrete_sequence = ['red'])
+
+  fig_.update_traces(fill = 'toself')
+  return fig_
+
+
+#player overview data scraping
+def player_overview(first_name, last_name):
+
+  #lookup player id information
+  lookup = playerid_lookup(last_name, first_name)
+
+  #split player id info items useable for function
+  fg_id = lookup['key_fangraphs'][0]
+
+  #define the url, replace url items with useable lookup items
+  url_ = (f'https://www.fangraphs.com/players/{first_name}-{last_name}/{fg_id}/')
+
+  #open url
+  opener_ = urlopen(url_)
+
+  #convert url to readable html
+  html_bytes = opener_.read()
+  html = html_bytes.decode("utf-8")
+
+  #split lines of html to aid readability
+  html_split = html.strip().split('\n')
+
+  #locate player info using regex
+  info_find = re.findall('box-item.*?<', str(html_split))
+  info_find = re.sub('\'box-item">*?>', '', str(info_find))
+  clean_find = re.sub(r'[^\w]', ' ', info_find).split()
+
+  #locate position using regex (position is broken away from other data in html code on fangraphs' website elements)
+  pos_find = re.findall('-pos.*?<', str(html_split))
+  pos_find = re.sub('<.*?', '', str(pos_find))
+  clean_pos_find = re.sub(r'[^\w]', ' ', pos_find).split()
+
+  #define lists of data to convert to dataframe
+  item__ = [clean_find[0], clean_find[2]+'/'+clean_find[3], 'Height/Weight', (clean_pos_find[0]).title()]
+  att__ = [clean_find[1], clean_find[4]+' / '+clean_find[5], clean_find[6]+'ft-'+clean_find[7]+'in'+' / '+clean_find[8]+'lbs', clean_pos_find[1]]
+
+  #define header info
+  dict_ = {'Name': item__, first_name.title()+' '+last_name.title(): att__}
+
+  #merge data into useable dataframe
+  overview_ = pd.DataFrame(dict_)
+
+
+  text_1 = print(f"""
+  {clean_find[0]} | {clean_find[1]}
+  {clean_find[2]+'/'+clean_find[3]} | {clean_find[4]+'/'+clean_find[5]}
+  Height/Weight | {clean_find[6]+'ft-'+clean_find[7]+'in'}
+  """)
+
+  #return the output of player overview
+  return overview_
+  return text_1
+
+
+#back of card player stats
+def player_card_stats(first_name, last_name):
+
+  #gather stats for all seasons defined below
+  data = batting_stats(start_season = '2010', end_season = '2023', qual = 200)
+
+  #pull name and capitalize
+  player_id_ = (f"{first_name} {last_name}").title()
+
+  #select data for player using name created above
+  player_data_ = data[(data['Name'] == player_id_)]
+
+  player_data_ = player_data_.sort_values('Season', ascending=False)
+
+  #reset index of dataframe above
+  player_data_new_ = player_data_.reset_index(drop=True)
+
+  #create final dataframe with stats to be displayed
+  card_df = player_data_new_[['Season', 'Team', 'Age', 'G', 'AB', 'H', '1B', '2B', '3B', 'HR', 'BB', 'RBI', 'SB', 'SLG', 'OPS', 'AVG']]
+
+  #define colors for chart
+  bg_color = '#FFFFFF'
+  text_color = '#000000'
+
+  #define font styling for chart
+  plt.rcParams['text.color'] = text_color
+  plt.rcParams['font.family'] = 'monospace'
+
+  #define column formatting - left as individual columns to customize individually in the future
+  col_defs = [
+      ColumnDefinition(
+          name='Season',
+          textprops={'ha':'left', 'weight': 'bold'},
+          width=1
+      ),
+
+      ColumnDefinition(
+          name='Team',
+          textprops={'ha':'center', 'color': text_color, 'weight': 'bold'},
+          width=0.5
+      ),
+
+      ColumnDefinition(
+          name='Age',
+          textprops={'ha':'center', 'color': text_color, 'weight': 'bold'},
+          width=0.5
+      ),
+
+      ColumnDefinition(
+          name='G',
+          textprops={'ha':'center', 'color': text_color, 'weight': 'bold'},
+          width=0.5
+      ),
+
+      ColumnDefinition(
+          name='AB',
+          textprops={'ha':'center', 'color': text_color, 'weight': 'bold'},
+          width=0.5
+      ),
+
+      ColumnDefinition(
+          name='H',
+          textprops={'ha':'center', 'color': text_color, 'weight': 'bold'},
+          width=0.5
+      ),
+
+          ColumnDefinition(
+          name='1B',
+          textprops={'ha':'center', 'color': text_color, 'weight': 'bold'},
+          width=0.5
+      ),
+
+          ColumnDefinition(
+          name='2B',
+          textprops={'ha':'center', 'color': text_color, 'weight': 'bold'},
+          width=0.5
+      ),
+
+          ColumnDefinition(
+          name='3B',
+          textprops={'ha':'center', 'color': text_color, 'weight': 'bold'},
+          width=0.5
+      ),
+
+          ColumnDefinition(
+          name='HR',
+          textprops={'ha':'center', 'color': text_color, 'weight': 'bold'},
+          width=0.5
+      ),
+
+          ColumnDefinition(
+          name='BB',
+          textprops={'ha':'center', 'color': text_color, 'weight': 'bold'},
+          width=0.5
+      ),
+
+          ColumnDefinition(
+          name='RBI',
+          textprops={'ha':'center', 'color': text_color, 'weight': 'bold'},
+          width=0.5
+      ),
+
+          ColumnDefinition(
+          name='SB',
+          textprops={'ha':'center', 'color': text_color, 'weight': 'bold'},
+          width=0.5
+      ),
+
+          ColumnDefinition(
+          name='SLG',
+          textprops={'ha':'center', 'color': text_color, 'weight': 'bold'},
+          width=0.75
+      ),
+
+          ColumnDefinition(
+          name='OPS',
+          textprops={'ha':'center', 'color': text_color, 'weight': 'bold'},
+          width=0.75
+      ),
+
+          ColumnDefinition(
+          name='AVG',
+          textprops={'ha':'center', 'color': text_color, 'weight': 'bold'},
+          width=0.75
+      )
+  ]
+
+  #set plot parameters
+  fig, ax = plt.subplots(figsize=(11,2.5))
+  fig.set_facecolor(bg_color)
+  ax.set_facecolor(bg_color)
+
+  #plot the chart
+  table = Table(
+      card_df,
+      column_definitions=col_defs,
+      index_col = 'Season',
+      row_dividers = True,
+      row_divider_kw = {'linewidth': .5, 'linestyle': (0, (1 , 5))},
+      textprops = {'fontsize': 10},
+      col_label_divider_kw = {'linewidth': .5, 'linestyle': '-'},
+      column_border_kw = {'linewidth': .5, 'linestyle': '-'},
+      ax = ax
+  )
+  #return the output of card stat chart
+  return table
